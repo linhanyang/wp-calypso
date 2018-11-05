@@ -18,12 +18,12 @@ import JobSubmission from './components/settings/job-submission';
 import Pages from './components/settings/pages';
 import installActionHandlers from './state/data-layer';
 import { makeLayout, render as clientRender } from 'controller';
+import reducer from './state/reducer';
 
-function initExtension() {
+export default async function( _, addReducer ) {
+	await addReducer( [ 'extensions', 'wpJobManager' ], reducer );
 	installActionHandlers();
-}
 
-export default function() {
 	const jobSubmissionSlug = get( Tabs, 'JOB_SUBMISSION.slug', '' );
 	const pagesSlug = get( Tabs, 'PAGES.slug', '' );
 
@@ -61,5 +61,3 @@ export default function() {
 		clientRender
 	);
 }
-
-initExtension();
