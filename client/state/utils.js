@@ -8,7 +8,6 @@ import validator from 'is-my-json-valid';
 import {
 	forEach,
 	get,
-	includes,
 	isEmpty,
 	isEqual,
 	mapValues,
@@ -81,13 +80,9 @@ export function isValidStateWithSchema( state, schema, debugInfo ) {
  * then this super-reducer will abort and return the
  * previous state.
  *
- * If some action should apply to every single item
- * in the map of keyed objects, then that action type
- * should be supplied in the list of `globalActions`
- * These will apply to every item in the collection
- * and they may not have the necessary key: for
- * example, the DESERIALIZE and SERIALIZE actions
- * may apply to all items and are included by default.
+ * The keyed reducer handles the SERIALIZE and DESERIALIZE actions specially and makes sure
+ * that Calypso state persistence works as expected (ignoring empty and initial state,
+ * serialization into multiple storage keys etc.)
  *
  * @example
  * const age = ( state = 0, action ) =>
@@ -116,18 +111,11 @@ export function isValidStateWithSchema( state, schema, debugInfo ) {
  *     }
  * }
  *
- * @example
- * const reducer = keyedReducer( 'username', userReducer, [ DESERIALIZE, SERIALIZE ] );
- * reducer.hasCustomPersistence = true;
- *
- * // now every item can decide what to do for persistence
- *
  * @param {string} keyPath lodash-style path to the key in action referencing item in state map
  * @param {Function} reducer applied to referenced item in state map
- * @param {Array} globalActions set of types which apply to every item in the collection
  * @return {Function} super-reducer applying reducer over map of keyed items
  */
-export const keyedReducer = ( keyPath, reducer, globalActions = [ SERIALIZE, DESERIALIZE ] ) => {
+export const keyedReducer = ( keyPath, reducer ) => {
 	// some keys are invalid
 	if ( 'string' !== typeof keyPath ) {
 		throw new TypeError(
@@ -150,7 +138,15 @@ export const keyedReducer = ( keyPath, reducer, globalActions = [ SERIALIZE, DES
 	const initialState = reducer( undefined, { type: '@@calypso/INIT' } );
 
 	return ( state = {}, action ) => {
-		if ( globalActions && includes( globalActions, action.type ) ) {
+		if ( action.type === SERIALIZE ) {
+			const serialized = omitBy(
+				mapValues( state, item => reducer( item, action ) ),
+				a => a === undefined || isEqual( a, initialState )
+			);
+			return isEmpty( serialized ) ? undefined : serialized;
+		}
+
+		if ( action.type === DESERIALIZE ) {
 			return omitBy(
 				mapValues( state, item => reducer( item, action ) ),
 				a => a === undefined || isEqual( a, initialState )
