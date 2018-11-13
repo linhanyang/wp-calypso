@@ -19,8 +19,7 @@ describe( 'persistence', () => {
 			.mockImplementation( () => () => {} );
 
 		const initialState = createReduxStore().getState();
-
-		reducer( reducer( initialState, { type: SERIALIZE } ), { type: DESERIALIZE } );
+		reducer( reducer( initialState, { type: SERIALIZE } ).root(), { type: DESERIALIZE } );
 
 		expect( consoleErrorSpy ).not.toHaveBeenCalled();
 		expect( consoleWarnSpy ).not.toHaveBeenCalled();
