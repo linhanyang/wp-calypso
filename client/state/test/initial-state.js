@@ -17,6 +17,7 @@ import localforage from 'lib/localforage';
 import userFactory from 'lib/user';
 import { isSupportUserSession } from 'lib/user/support-user-interop';
 import { useSandbox, useFakeTimers } from 'test/helpers/use-sinon';
+import { combineReducers } from 'state/utils';
 
 jest.mock( 'config', () => {
 	const config = () => 'development';
@@ -352,26 +353,36 @@ describe( 'initial-state', () => {
 	describe( '#persistOnChange()', () => {
 		let store, setItemSpy;
 
-		const reducer = ( state, { data: newData, userId: userId } ) => {
-			if ( newData && newData !== state.data ) {
-				state = Object.assign( {}, state, { data: newData } );
-			}
-			if ( userId && userId !== state.currentUser.id ) {
-				state = Object.assign( {}, state, { currentUser: { id: userId } } );
+		const dataReducer = ( state = null, { data } ) => {
+			if ( data && data !== state ) {
+				return data;
 			}
 			return state;
 		};
+		dataReducer.hasCustomPersistence = true;
+
+		const currentUserReducer = ( state = null, { userId } ) => {
+			if ( userId && userId !== state.id ) {
+				return { ...state, id: userId };
+			}
+			return state;
+		};
+		currentUserReducer.hasCustomPersistence = true;
+
+		const reducer = combineReducers( { data: dataReducer, currentUser: currentUserReducer } );
 
 		// Create a valid initial state (with a stored user ID that matches the
 		// current mocked user ID).
 		const initialState = { currentUser: { id: 123456789 } };
+
+		const serializeState = state => reducer( state, { type: 'SERIALIZE' } );
 
 		beforeEach( () => {
 			setItemSpy = jest
 				.spyOn( localforage, 'setItem' )
 				.mockImplementation( () => Promise.resolve() );
 
-			store = persistOnChange( createStore( reducer, initialState ), state => state );
+			store = persistOnChange( createStore( reducer, initialState ), serializeState );
 		} );
 
 		afterEach( () => {
@@ -473,11 +484,11 @@ describe( 'initial-state', () => {
 			expect( setItemSpy ).toHaveBeenCalledTimes( 2 );
 			expect( setItemSpy ).toHaveBeenCalledWith(
 				'redux-state-123456789',
-				Object.assign( {}, initialState, { data: 3 } )
+				expect.objectContaining( { data: 3 } )
 			);
 			expect( setItemSpy ).toHaveBeenCalledWith(
 				'redux-state-123456789',
-				Object.assign( {}, initialState, { data: 5 } )
+				expect.objectContaining( { data: 5 } )
 			);
 		} );
 	} );
