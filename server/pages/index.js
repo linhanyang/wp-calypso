@@ -266,7 +266,7 @@ function getDefaultContext( request ) {
 		abTestHelper: !! config.isEnabled( 'dev/test-helper' ),
 		preferencesHelper: !! config.isEnabled( 'dev/preferences-helper' ),
 		devDocsURL: '/devdocs',
-		store: createReduxStore( initialServerState ),
+		store: createReduxStore( initialReducer, initialServerState ),
 		bodyClasses,
 		sectionCss,
 	} );

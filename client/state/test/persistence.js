@@ -18,7 +18,7 @@ describe( 'persistence', () => {
 			.spyOn( global.console, 'warn' )
 			.mockImplementation( () => () => {} );
 
-		const initialState = createReduxStore().getState();
+		const initialState = createReduxStore( reducer ).getState();
 		reducer( reducer( initialState, { type: SERIALIZE } ).root(), { type: DESERIALIZE } );
 
 		expect( consoleErrorSpy ).not.toHaveBeenCalled();

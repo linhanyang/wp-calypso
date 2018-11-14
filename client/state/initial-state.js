@@ -10,9 +10,7 @@ import { map, pick, throttle } from 'lodash';
 /**
  * Internal dependencies
  */
-import { createReduxStore } from 'state';
-import initialReducer from 'state/reducer';
-import { SERIALIZE, DESERIALIZE } from 'state/action-types';
+import { APPLY_STORED_STATE, SERIALIZE, DESERIALIZE } from 'state/action-types';
 import localforage from 'lib/localforage';
 import { isSupportUserSession } from 'lib/user/support-user-interop';
 import config from 'config';
@@ -38,10 +36,10 @@ function deserialize( state, reducer ) {
 	return reducer( state, { type: DESERIALIZE } );
 }
 
-function getInitialServerState() {
+function getInitialServerState( reducer ) {
 	// Bootstrapped state from a server-render
 	if ( typeof window === 'object' && window.initialReduxState && ! isSupportUserSession() ) {
-		const serverState = deserialize( window.initialReduxState, initialReducer );
+		const serverState = deserialize( window.initialReduxState, reducer );
 		return pick( serverState, Object.keys( window.initialReduxState ) );
 	}
 	return {};
@@ -79,47 +77,26 @@ function shouldAddSympathy() {
 	return false;
 }
 
-function getStateFromLocalStorage() {
-	const reduxStateKey = getReduxStateKey();
-	return localforage.getItem( reduxStateKey ).then( function( initialState ) {
-		debug( 'fetched initial state', initialState );
-		if ( initialState === null ) {
-			debug( 'no initial state found in localforage' );
-			return {};
-		}
-		if ( initialState._timestamp && initialState._timestamp + MAX_AGE < Date.now() ) {
-			debug( 'stored state is too old, building redux store from scratch' );
-			return {};
-		}
-		const deserializedState = deserialize( initialState, initialReducer );
-		// This check is most important to do on save (to prevent bad data
-		// from being written to local storage in the first place). But it
-		// is worth doing here also, on load, to prevent using historical
-		// bad state data (from before this check was added) or any other
-		// scenario where state data may have been stored without this
-		// check being performed.
-		if ( ! isValidReduxKeyAndState( reduxStateKey, deserializedState ) ) {
-			debug(
-				'stored state is invalid (storage key "' +
-					reduxStateKey +
-					'" does not match the state), building redux store from scratch'
-			);
-			return {};
-		}
-		return deserializedState;
-	} );
-}
-
-const loadInitialState = initialState => {
-	debug( 'loading initial state', initialState );
-	const serverState = getInitialServerState();
-	const mergedState = Object.assign( {}, initialState, serverState );
-	return createReduxStore( mergedState );
-};
-
-function loadInitialStateFailed( error ) {
-	debug( 'failed to load initial redux-store state', error );
-	return createReduxStore();
+export function getStateFromLocalStorage( reducer, subkey ) {
+	const reduxStateKey = getReduxStateKey() + ( subkey ? ':' + subkey : '' );
+	return localforage
+		.getItem( reduxStateKey )
+		.then( function( initialState ) {
+			debug( 'fetched initial state', initialState );
+			if ( initialState === null ) {
+				debug( 'no initial state found in localforage' );
+				return null;
+			}
+			if ( initialState._timestamp && initialState._timestamp + MAX_AGE < Date.now() ) {
+				debug( 'stored state is too old, building redux store from scratch' );
+				return null;
+			}
+			return deserialize( initialState, reducer );
+		} )
+		.catch( error => {
+			debug( 'failed to load initial redux-store state', error );
+			return null;
+		} );
 }
 
 function getReduxStateKey() {
@@ -135,7 +112,7 @@ function getReduxStateKeyForUserId( userId ) {
 	return 'redux-state-' + userId;
 }
 
-function isValidReduxKeyAndState( key, state ) {
+export function isValidReduxKeyAndState( key, state ) {
 	// When the current user is changed (for example via logout) the previous
 	// user's state remains in memory until the page refreshes. To prevent this
 	// outdated state from being written to the new user's local storage, it is
@@ -157,6 +134,11 @@ function localforageStoreState( reduxStateKey, storageKey, state, _timestamp ) {
 }
 
 export function persistOnChange( reduxStore, serializeState = serialize ) {
+	const shouldPersist = config.isEnabled( 'persist-redux' ) && ! isSupportUserSession();
+	if ( ! shouldPersist ) {
+		return;
+	}
+
 	let state;
 
 	const throttledSaveState = throttle(
@@ -173,9 +155,7 @@ export function persistOnChange( reduxStore, serializeState = serialize ) {
 
 			state = nextState;
 
-			// TODO: serialize with the current reducer rather than initial one once we
-			// start updating the reducer dynamically.
-			const serializedState = serializeState( state, initialReducer );
+			const serializedState = serializeState( state, reduxStore.getCurrentReducer() );
 			const _timestamp = new Date();
 
 			const storeTasks = map( serializedState.get(), ( data, storageKey ) =>
@@ -195,13 +175,30 @@ export function persistOnChange( reduxStore, serializeState = serialize ) {
 	}
 
 	reduxStore.subscribe( throttledSaveState );
-
-	return reduxStore;
 }
 
-export default function createReduxStoreFromPersistedInitialState( reduxStoreReady ) {
-	const shouldPersist = config.isEnabled( 'persist-redux' ) && ! isSupportUserSession();
+// This check is most important to do on save (to prevent bad data
+// from being written to local storage in the first place). But it
+// is worth doing also on load, to prevent using historical
+// bad state data (from before this check was added) or any other
+// scenario where state data may have been stored without this
+// check being performed.
+function verifyDeserializedRootState( state ) {
+	const reduxStateKey = getReduxStateKey();
 
+	if ( ! isValidReduxKeyAndState( reduxStateKey, state ) ) {
+		debug(
+			'stored state is invalid (storage key "' +
+				reduxStateKey +
+				'" does not match the state), building redux store from scratch'
+		);
+		return false;
+	}
+
+	return true;
+}
+
+async function getInitialStoredState( initialReducer ) {
 	if ( 'development' === process.env.NODE_ENV ) {
 		window.resetState = () => localforage.clear( () => location.reload( true ) );
 
@@ -213,21 +210,37 @@ export default function createReduxStoreFromPersistedInitialState( reduxStoreRea
 			);
 
 			localforage.clear();
-
-			return shouldPersist
-				? reduxStoreReady( persistOnChange( createReduxStore( getInitialServerState() ) ) )
-				: reduxStoreReady( createReduxStore( getInitialServerState() ) );
+			return null;
 		}
 	}
 
-	if ( shouldPersist ) {
-		return getStateFromLocalStorage()
-			.then( loadInitialState )
-			.catch( loadInitialStateFailed )
-			.then( persistOnChange )
-			.then( reduxStoreReady );
+	let initialStoredState = await getStateFromLocalStorage( initialReducer );
+	if ( initialStoredState && ! verifyDeserializedRootState( initialStoredState ) ) {
+		return null;
 	}
 
-	debug( 'persist-redux is not enabled, building state from scratch' );
-	reduxStoreReady( loadInitialState( {} ) );
+	const storageKeys = [ ...initialReducer.getStorageKeys() ];
+
+	async function loadReducerState( { storageKey, reducer } ) {
+		const storedState = await getStateFromLocalStorage( reducer, storageKey );
+		if ( storedState ) {
+			initialStoredState = initialReducer( initialStoredState, {
+				type: APPLY_STORED_STATE,
+				storageKey,
+				storedState,
+			} );
+		}
+	}
+
+	await Promise.all( map( storageKeys, loadReducerState ) );
+
+	return initialStoredState;
+}
+
+export async function getInitialState( reducer ) {
+	const shouldPersist = config.isEnabled( 'persist-redux' ) && ! isSupportUserSession();
+
+	const storedState = shouldPersist ? await getInitialStoredState( reducer ) : null;
+	const serverState = getInitialServerState( reducer );
+	return { ...storedState, ...serverState };
 }

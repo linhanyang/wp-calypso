@@ -6,11 +6,6 @@ import thunkMiddleware from 'redux-thunk';
 import { createStore, applyMiddleware, compose } from 'redux';
 
 /**
- * Internal dependencies
- */
-import initialReducer from './reducer';
-
-/**
  * Store enhancers
  */
 import actionLogger from './action-log';
@@ -24,6 +19,22 @@ import navigationMiddleware from './navigation/middleware';
 import noticesMiddleware from './notices/middleware';
 import wpcomApiMiddleware from 'state/data-layer/wpcom-api-middleware';
 
+const addReducerEnhancer = nextCreator => ( initialReducer, initialState ) => {
+	const nextStore = nextCreator( initialReducer, initialState );
+
+	let currentReducer = initialReducer;
+	function addReducer( keys, subReducer ) {
+		currentReducer = currentReducer.addReducer( keys, subReducer );
+		this.replaceReducer( currentReducer );
+	}
+
+	function getCurrentReducer() {
+		return currentReducer;
+	}
+
+	return Object.assign( {}, nextStore, { addReducer, getCurrentReducer } );
+};
+
 /**
  * @typedef {Object} ReduxStore
  * @property {!Function} dispatch dispatches actions
@@ -32,7 +43,7 @@ import wpcomApiMiddleware from 'state/data-layer/wpcom-api-middleware';
  * @property {Function} subscribe attaches an event listener to state changes
  */
 
-export function createReduxStore( initialState = {} ) {
+export function createReduxStore( initialReducer, initialState = {} ) {
 	const isBrowser = typeof window === 'object';
 	const isAudioSupported = typeof window === 'object' && typeof window.Audio === 'function';
 
@@ -59,6 +70,7 @@ export function createReduxStore( initialState = {} ) {
 	].filter( Boolean );
 
 	const enhancers = [
+		addReducerEnhancer,
 		isBrowser && window.app && window.app.isDebug && consoleDispatcher,
 		httpDataEnhancer,
 		applyMiddleware( ...middlewares ),
