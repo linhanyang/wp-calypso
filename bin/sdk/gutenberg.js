@@ -109,5 +109,6 @@ exports.config = ( { argv: { inputDir, outputDir }, getBaseConfig } ) => {
 			filename: '[name].js',
 			libraryTarget: 'window',
 		},
+		externals: [ ...baseConfig.externals, 'lodash' ],
 	};
 };
