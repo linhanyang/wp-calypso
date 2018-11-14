@@ -122,98 +122,105 @@ export function createSiteWithCart(
 	const surveyVertical = getSurveyVertical( reduxStore.getState() ).trim();
 	const siteGoals = getSiteGoals( reduxStore.getState() ).trim();
 	const siteType = getSiteType( reduxStore.getState() ).trim();
-	const importingFromUrl =
-		'import' === flowName ? normalizeImportUrl( getNuxUrlInputValue( reduxStore.getState() ) ) : '';
 
-	wpcom.undocumented().sitesNew(
-		{
-			blog_name: importingFromUrl || siteUrl,
-			blog_title: siteTitle,
-			options: {
-				designType: designType || undefined,
-				// the theme can be provided in this step's dependencies or the
-				// step object itself depending on if the theme is provided in a
-				// query. See `getThemeSlug` in `DomainsStep`.
-				theme: dependencies.themeSlugWithRepo || themeSlugWithRepo,
-				vertical: surveyVertical || undefined,
-				siteGoals: siteGoals || undefined,
-				siteType: siteType || undefined,
-			},
-			public: abtest( 'privateByDefault' ) === 'private' ? -1 : 1,
-			validate: false,
-			find_available_url: !! ( isPurchasingItem || importingFromUrl ),
+	const newSiteParams = {
+		blog_title: siteTitle,
+		options: {
+			designType: designType || undefined,
+			// the theme can be provided in this step's dependencies or the
+			// step object itself depending on if the theme is provided in a
+			// query. See `getThemeSlug` in `DomainsStep`.
+			theme: dependencies.themeSlugWithRepo || themeSlugWithRepo,
+			vertical: surveyVertical || undefined,
+			siteGoals: siteGoals || undefined,
+			siteType: siteType || undefined,
 		},
-		function( error, response ) {
-			if ( error ) {
-				callback( error );
+		validate: false,
+	};
 
-				return;
-			}
+	const importingFromUrl =
+		'import' === flowName && normalizeImportUrl( getNuxUrlInputValue( reduxStore.getState() ) );
 
-			const parsedBlogURL = parseURL( response.blog_details.url );
+	if ( importingFromUrl ) {
+		newSiteParams.find_available_url = true;
+		newSiteParams.blog_name = importingFromUrl;
+		newSiteParams.public = -1;
+	} else {
+		newSiteParams.find_available_url = !! isPurchasingItem;
+		newSiteParams.blog_name = siteUrl;
+		newSiteParams.public = abtest( 'privateByDefault' ) === 'private' ? -1 : 1;
+	}
 
-			const siteSlug = parsedBlogURL.hostname;
-			const siteId = response.blog_details.blogid;
-			const isFreeThemePreselected = startsWith( themeSlugWithRepo, 'pub' ) && ! themeItem;
-			const providedDependencies = {
-				siteId,
-				siteSlug,
-				domainItem,
-				themeItem,
-			};
-			const addToCartAndProceed = () => {
-				let privacyItem = null;
+	wpcom.undocumented().sitesNew( newSiteParams, function( error, response ) {
+		if ( error ) {
+			callback( error );
 
-				if ( domainItem ) {
-					const { product_slug: productSlug } = domainItem;
-					const productsList = getProductsList( reduxStore.getState() );
-					if ( supportsPrivacyProtectionPurchase( productSlug, productsList ) ) {
-						if ( isDomainTransfer( domainItem ) ) {
-							privacyItem = cartItems.domainTransferPrivacy( {
-								domain: domainItem.meta,
-								source: 'signup',
-							} );
-						} else {
-							privacyItem = cartItems.domainPrivacyProtection( {
-								domain: domainItem.meta,
-								source: 'signup',
-							} );
-						}
+			return;
+		}
+
+		const parsedBlogURL = parseURL( response.blog_details.url );
+
+		const siteSlug = parsedBlogURL.hostname;
+		const siteId = response.blog_details.blogid;
+		const isFreeThemePreselected = startsWith( themeSlugWithRepo, 'pub' ) && ! themeItem;
+		const providedDependencies = {
+			siteId,
+			siteSlug,
+			domainItem,
+			themeItem,
+		};
+		const addToCartAndProceed = () => {
+			let privacyItem = null;
+
+			if ( domainItem ) {
+				const { product_slug: productSlug } = domainItem;
+				const productsList = getProductsList( reduxStore.getState() );
+				if ( supportsPrivacyProtectionPurchase( productSlug, productsList ) ) {
+					if ( isDomainTransfer( domainItem ) ) {
+						privacyItem = cartItems.domainTransferPrivacy( {
+							domain: domainItem.meta,
+							source: 'signup',
+						} );
+					} else {
+						privacyItem = cartItems.domainPrivacyProtection( {
+							domain: domainItem.meta,
+							source: 'signup',
+						} );
 					}
 				}
-
-				const newCartItems = [
-					cartItem,
-					domainItem,
-					googleAppsCartItem,
-					themeItem,
-					privacyItem,
-				].filter( item => item );
-
-				if ( newCartItems.length ) {
-					SignupCart.addToCart( siteId, newCartItems, function( cartError ) {
-						callback( cartError, providedDependencies );
-					} );
-				} else {
-					callback( undefined, providedDependencies );
-				}
-			};
-
-			if ( ! user.get() && isFreeThemePreselected ) {
-				setThemeOnSite( addToCartAndProceed, { siteSlug, themeSlugWithRepo } );
-			} else if ( user.get() && isFreeThemePreselected ) {
-				fetchSitesAndUser(
-					siteSlug,
-					setThemeOnSite.bind( null, addToCartAndProceed, { siteSlug, themeSlugWithRepo } ),
-					reduxStore
-				);
-			} else if ( user.get() ) {
-				fetchSitesAndUser( siteSlug, addToCartAndProceed, reduxStore );
-			} else {
-				addToCartAndProceed();
 			}
+
+			const newCartItems = [
+				cartItem,
+				domainItem,
+				googleAppsCartItem,
+				themeItem,
+				privacyItem,
+			].filter( item => item );
+
+			if ( newCartItems.length ) {
+				SignupCart.addToCart( siteId, newCartItems, function( cartError ) {
+					callback( cartError, providedDependencies );
+				} );
+			} else {
+				callback( undefined, providedDependencies );
+			}
+		};
+
+		if ( ! user.get() && isFreeThemePreselected ) {
+			setThemeOnSite( addToCartAndProceed, { siteSlug, themeSlugWithRepo } );
+		} else if ( user.get() && isFreeThemePreselected ) {
+			fetchSitesAndUser(
+				siteSlug,
+				setThemeOnSite.bind( null, addToCartAndProceed, { siteSlug, themeSlugWithRepo } ),
+				reduxStore
+			);
+		} else if ( user.get() ) {
+			fetchSitesAndUser( siteSlug, addToCartAndProceed, reduxStore );
+		} else {
+			addToCartAndProceed();
 		}
-	);
+	} );
 }
 
 function fetchSitesUntilSiteAppears( siteSlug, reduxStore, callback ) {
