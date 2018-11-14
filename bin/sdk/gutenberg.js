@@ -1,9 +1,9 @@
 /** @format */
+
 /**
  * External dependencies
  */
-
-/* eslint import/no-nodejs-modules: ["error", {"allow": ["path", "fs"]}] */
+const { compact } = require( 'lodash' );
 const fs = require( 'fs' );
 const path = require( 'path' );
 const GenerateJsonFile = require( 'generate-json-file-webpack-plugin' );
@@ -87,7 +87,7 @@ exports.config = ( { argv: { inputDir, outputDir }, getBaseConfig } ) => {
 
 	return {
 		...baseConfig,
-		plugins: [
+		plugins: compact( [
 			...baseConfig.plugins,
 			fs.existsSync( presetPath ) &&
 				new GenerateJsonFile( {
@@ -97,7 +97,7 @@ exports.config = ( { argv: { inputDir, outputDir }, getBaseConfig } ) => {
 						betaBlocks: presetBetaBlocks,
 					},
 				} ),
-		],
+		] ),
 		entry: {
 			editor: editorScript,
 			'editor-beta': editorBetaScript,
