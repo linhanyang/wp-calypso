@@ -15,42 +15,9 @@ import config from 'config';
 import { makeLayout, render as clientRender } from 'controller';
 
 export default function() {
+	const validPeriods = [ 'day', 'week', 'month', 'year' ];
 
-	page(
-		'/stats/wordads/day/:site',
-		siteSelection,
-		navigation,
-		statsController.wordAds,
-		makeLayout,
-		clientRender
-	);
-
-	page(
-		'/stats/wordads/week/:site',
-		siteSelection,
-		navigation,
-		statsController.wordAds,
-		makeLayout,
-		clientRender
-	);
-
-	page(
-		'/stats/wordads/month/:site',
-		siteSelection,
-		navigation,
-		statsController.wordAds,
-		makeLayout,
-		clientRender
-	);
-
-	page(
-		'/stats/wordads/year/:site',
-		siteSelection,
-		navigation,
-		statsController.wordAds,
-		makeLayout,
-		clientRender
-	);
+	page( `/stats/wordads/:period(${ validPeriods.join( '|' ) })/:site` );
 
 	if ( config.isEnabled( 'manage/stats' ) ) {
 		// Redirect this to default /stats/day/ view in order to keep
